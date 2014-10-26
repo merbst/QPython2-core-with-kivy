@@ -17,7 +17,7 @@
 +
 +    /* Ensure we have access to libpymodules. */
 +    if (libpymodules == NULL) {
-+        printf("ANDROID_PRIVATE = %s\n", getenv("ANDROID_PRIVATE"));
++        /*printf("ANDROID_PRIVATE = %s\n", getenv("ANDROID_PRIVATE"));*/
 +        PyOS_snprintf(pathbuf, sizeof(pathbuf), "%s/libpymodules.so", getenv("ANDROID_PRIVATE"));
 +        libpymodules = dlopen(pathbuf, RTLD_NOW);
 +
@@ -65,3 +65,11 @@
      if ((p = Py_GETENV("PYTHONIOENCODING")) && *p != '\0') {
          p = icodeset = codeset = strdup(p);
          free_codeset = 1;
+--- Python-2.7.2.orig/Python/getplatform.c  2010-10-29 05:45:34.000000000 +0200
++++ Python-2.7.2/Python/getplatform.c   2011-04-20 17:52:12.000000000 +0200
+@@ -9,4 +9,4 @@
+ Py_GetPlatform(void)
+ {
+-	return PLATFORM;
++	return "linux2";
+ }

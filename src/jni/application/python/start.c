@@ -7,10 +7,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <jni.h>
 #include "SDL.h"
 #include "android/log.h"
-#include "jniwrapperstuff.h"
 
 #define LOG(x) __android_log_write(ANDROID_LOG_INFO, "python", (x))
 
@@ -43,14 +41,41 @@ int file_exists(const char * filename)
     return 0;
 }
 
+int strcmp (const char * src, const char * dst)
+{
+        int ret = 0 ;
+
+        while( ! (ret = *(unsigned char *)src - *(unsigned char *)dst) && *src)
+                ++src, ++dst;
+
+        if ( ret < 0 )
+                ret = -1 ;
+        else if ( ret > 0 )
+                ret = 1 ;
+
+        return( ret );
+}
+char * strcpy(char * dst, const char * src)
+{
+    char *p = dst;
+    while( *p ++ = *src ++ )
+        ;
+    return dst;
+}
+
+
 int main(int argc, char **argv) {
 
     char *env_argument = NULL;
+    char *pri_argument = NULL;
+	char *main_py      = NULL;
     int ret = 0;
     FILE *fd;
 
     LOG("Initialize Python for Android");
     env_argument = getenv("ANDROID_ARGUMENT");
+    pri_argument = getenv("ANDROID_PRIVATE");
+    main_py      = getenv("ANDROID_SCRIPT");
     setenv("ANDROID_APP_PATH", env_argument, 1);
 	//setenv("PYTHONVERBOSE", "2", 1);
     Py_SetProgramName(argv[0]);
@@ -70,13 +95,17 @@ int main(int argc, char **argv) {
      */
     PyRun_SimpleString(
         "import sys, posix\n" \
+        "sys.platform='linux2'\n" \
         "private = posix.environ['ANDROID_PRIVATE']\n" \
+        "public = posix.environ['ANDROID_PUBLIC']\n" \
         "argument = posix.environ['ANDROID_ARGUMENT']\n" \
+        "logfile = '%s/.run.log' % (argument,)\n" \
         "sys.path[:] = [ \n" \
 		"    private + '/lib/python27.zip', \n" \
 		"    private + '/lib/python2.7/', \n" \
 		"    private + '/lib/python2.7/lib-dynload/', \n" \
 		"    private + '/lib/python2.7/site-packages/', \n" \
+		"    public  + '/lib/python2.7/site-packages/', \n" \
 		"    argument ]\n" \
         "import androidembed\n" \
         "class LogFile(object):\n" \
@@ -85,30 +114,34 @@ int main(int argc, char **argv) {
         "    def write(self, s):\n" \
         "        s = self.buffer + s\n" \
         "        lines = s.split(\"\\n\")\n" \
+        "        output = open(logfile,\"a\")\n" \
         "        for l in lines[:-1]:\n" \
         "            androidembed.log(l)\n" \
+        "            output.write(\"%s\\n\" % (l,))\n" \
+        "        output.close()\n" \
         "        self.buffer = lines[-1]\n" \
-        "    def flush(self):\n" \
-        "        return\n" \
         "sys.stdout = sys.stderr = LogFile()\n" \
-		"import site; print site.getsitepackages()\n"\
-		"print 'Android path', sys.path\n" \
-        "print 'Android kivy bootstrap done. __name__ is', __name__");
+		"import site\n"\
+        "import time\n"\
+        "#print '# QPython start: %s' % time.strftime('%Y-%m-%d %H:%M:%S',time.localtime(time.time()))\n"\
+        "#print site.getsitepackages()\n"\
+		"#print '#Android path', sys.path\n" \
+		"#print '#Log path', logfile\n" \
+        "#print '#Android kivy bootstrap done. __name__ is', __name__");
 
     /* run it !
      */
-    LOG("Run user program, change dir and execute main.py");
+    LOG("[START]");
+    LOG(main_py);
+    LOG(env_argument);
     chdir(env_argument);
 
 	/* search the initial main.py
 	 */
-	char *main_py = "main.pyo";
-	if ( file_exists(main_py) == 0 ) {
-		if ( file_exists("main.py") )
-			main_py = "main.py";
-		else
-			main_py = NULL;
-	}
+    if ( file_exists(main_py)) {
+    } else {
+        main_py = NULL;
+    }
 
 	if ( main_py == NULL ) {
 		LOG("No main.pyo / main.py found.");
@@ -132,41 +165,18 @@ int main(int argc, char **argv) {
 			PyErr_Clear();
     }
 
+    fclose(fd);
+    /*chdir("/");*/
+
     /* close everything
      */
+    PyRun_SimpleString("is_project = posix.environ['IS_PROJECT']\n" \
+                        "print ''\nimport sys\nif is_project=='1': sys.exit()\n");
 	Py_Finalize();
-    fclose(fd);
+
 
     LOG("Python for android ended.");
     return ret;
-}
-
-JNIEXPORT void JNICALL JAVA_EXPORT_NAME(PythonService_nativeStart) ( JNIEnv*  env, jobject thiz,
-                                                                     jstring j_android_private,
-                                                                     jstring j_android_argument,
-                                                                     jstring j_python_home,
-                                                                     jstring j_python_path,
-                                                                     jstring j_arg )
-{
-    jboolean iscopy;
-    const char *android_private = (*env)->GetStringUTFChars(env, j_android_private, &iscopy);
-    const char *android_argument = (*env)->GetStringUTFChars(env, j_android_argument, &iscopy);
-    const char *python_home = (*env)->GetStringUTFChars(env, j_python_home, &iscopy);
-    const char *python_path = (*env)->GetStringUTFChars(env, j_python_path, &iscopy);
-    const char *arg = (*env)->GetStringUTFChars(env, j_arg, &iscopy);
-
-    setenv("ANDROID_PRIVATE", android_private, 1);
-    setenv("ANDROID_ARGUMENT", android_argument, 1);
-    setenv("PYTHONOPTIMIZE", "2", 1);
-    setenv("PYTHONHOME", python_home, 1);
-    setenv("PYTHONPATH", python_path, 1);
-    setenv("PYTHON_SERVICE_ARGUMENT", arg, 1);
-
-    char *argv[] = { "service" };
-    /* ANDROID_ARGUMENT points to service subdir,
-     * so main() will run main.py from this dir
-     */
-    main(1, argv);
 }
 
 #endif
